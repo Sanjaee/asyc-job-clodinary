@@ -1,4 +1,5 @@
-FROM golang:1.21-alpine AS builder
+# Build stage
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
@@ -7,10 +8,10 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 # Copy source code
-COPY . .
+COPY server.go ./
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+RUN CGO_ENABLED=0 GOOS=linux go build -o server server.go
 
 # Final stage
 FROM alpine:latest
@@ -19,8 +20,9 @@ RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
 
-COPY --from=builder /app/main .
+# Copy binary from builder
+COPY --from=builder /app/server .
 
 EXPOSE 8080
 
-CMD ["./main"]
+CMD ["./server"]
