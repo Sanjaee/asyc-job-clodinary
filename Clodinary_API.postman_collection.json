@@ -1,0 +1,192 @@
+{
+	"info": {
+		"_postman_id": "clodinary-api-collection",
+		"name": "Clodinary API",
+		"description": "Collection untuk testing Clodinary API - Image Upload & Processing dengan Cloudinary + RabbitMQ",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/health",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"health"
+					]
+				},
+				"description": "Health check endpoint untuk memastikan API server berjalan"
+			},
+			"response": []
+		},
+		{
+			"name": "Upload Images",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "title",
+							"value": "My Post Title",
+							"type": "text",
+							"description": "Title untuk post (required)"
+						},
+						{
+							"key": "todo",
+							"value": "My todo description",
+							"type": "text",
+							"description": "Todo description (optional)"
+						},
+						{
+							"key": "images",
+							"type": "file",
+							"src": [],
+							"description": "Upload multiple images (required). Field name bisa 'images' atau 'files'"
+						}
+					]
+				},
+				"url": {
+					"raw": "{{base_url}}/api/upload",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"upload"
+					]
+				},
+				"description": "Upload multiple images dengan title dan todo. Files akan di-save ke disk, di-insert ke DB dengan status PENDING, dan di-queue ke RabbitMQ untuk async processing oleh Worker.\n\n**Request:**\n- Method: POST\n- Content-Type: multipart/form-data\n- Fields:\n  - `title` (required): Title untuk post\n  - `todo` (optional): Todo description\n  - `images` atau `files` (required): Multiple image files\n\n**Response (ASYNC - < 50ms):**\n```json\n{\n  \"message\": \"Files uploaded and queued for processing\",\n  \"post_id\": \"uuid-here\",\n  \"status\": \"pending\",\n  \"file_paths\": [\"/tmp/...\", \"/tmp/...\"]\n}\n```\n\n**Flow:**\n1. API save file → insert DB (status=PENDING) → publish RabbitMQ → return response (< 50ms)\n2. Worker consume → compress → upload Cloudinary → update DB (async, 1-3s)\n3. Check hasil via GET `/api/posts/{post_id}`\n\n**Note:** Response sangat cepat karena tidak menunggu compress & upload. Worker akan process di background."
+			},
+			"response": []
+		},
+		{
+			"name": "Get All Posts",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/posts",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"posts"
+					]
+				},
+				"description": "Mendapatkan semua posts yang sudah di-process. Posts diurutkan berdasarkan created_at DESC.\n\n**Response:**\n```json\n[\n  {\n    \"id\": \"uuid\",\n    \"title\": \"Post Title\",\n    \"todo\": \"Todo description\",\n    \"imageurl\": \"https://res.cloudinary.com/...\",\n    \"created_at\": \"2024-01-01T00:00:00Z\"\n  }\n]\n```"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Post by ID",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/posts/:id",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"posts",
+						":id"
+					],
+					"variable": [
+						{
+							"key": "id",
+							"value": "{{post_id}}",
+							"description": "Post ID dari response upload"
+						}
+					]
+				},
+				"description": "Mendapatkan post spesifik berdasarkan ID.\n\n**Response:**\n```json\n{\n  \"id\": \"uuid\",\n  \"title\": \"Post Title\",\n  \"todo\": \"Todo description\",\n  \"imageurl\": \"https://res.cloudinary.com/...\",\n  \"created_at\": \"2024-01-01T00:00:00Z\"\n}\n```\n\n**Error 404:** Post tidak ditemukan"
+			},
+			"response": []
+		},
+		{
+			"name": "Upload Binary (Async)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "image/jpeg",
+						"type": "text",
+						"description": "Content-Type: image/jpeg, image/png, atau image/webp"
+					}
+				],
+				"body": {
+					"mode": "binary",
+					"binary": []
+				},
+				"url": {
+					"raw": "{{base_url}}/api/upload-binary",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"upload-binary"
+					]
+				},
+				"description": "Upload binary image file (JPEG, PNG, atau WebP). File akan di-compress dan di-upload ke Cloudinary secara async.\n\n**Request:**\n- Method: POST\n- Content-Type: `image/jpeg`, `image/png`, atau `image/webp`\n- Body: Binary file data\n\n**Response (ASYNC - < 50ms):**\n```json\n{\n  \"message\": \"File uploaded and queued for processing\",\n  \"job_id\": \"uuid-here\",\n  \"status\": \"pending\"\n}\n```\n\n**Flow:**\n1. Upload binary → save file → insert DB (status=pending) → publish RabbitMQ → return job_id (< 50ms)\n2. Worker consume → compress → upload Cloudinary → update DB (status=completed, image_url)\n3. Check status via GET `/api/upload-status/{job_id}` untuk mendapatkan URL Cloudinary\n\n**Note:** Response sangat cepat. Gunakan job_id untuk check status dan mendapatkan URL setelah processing selesai."
+			},
+			"response": []
+		},
+		{
+			"name": "Check Binary Upload Status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/api/upload-status/:job_id",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"api",
+						"upload-status",
+						":job_id"
+					],
+					"variable": [
+						{
+							"key": "job_id",
+							"value": "{{binary_job_id}}",
+							"description": "Job ID dari response upload-binary"
+						}
+					]
+				},
+				"description": "Check status dari binary upload job dan mendapatkan URL Cloudinary jika sudah selesai.\n\n**Response (Status: pending/processing):**\n```json\n{\n  \"job_id\": \"uuid\",\n  \"status\": \"pending\"\n}\n```\n\n**Response (Status: completed):**\n```json\n{\n  \"job_id\": \"uuid\",\n  \"status\": \"completed\",\n  \"image_url\": \"https://res.cloudinary.com/...\"\n}\n```\n\n**Response (Status: failed):**\n```json\n{\n  \"job_id\": \"uuid\",\n  \"status\": \"failed\",\n  \"error\": \"Error message\"\n}\n```\n\n**Status Values:**\n- `pending`: Job masih dalam queue\n- `processing`: Sedang di-process (compress & upload)\n- `completed`: Selesai, URL Cloudinary tersedia\n- `failed`: Gagal, cek error message"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "post_id",
+			"value": "",
+			"type": "string",
+			"description": "Post ID dari response upload (akan di-set otomatis setelah upload)"
+		},
+		{
+			"key": "binary_job_id",
+			"value": "",
+			"type": "string",
+			"description": "Job ID dari response upload-binary (akan di-set otomatis setelah upload)"
+		}
+	]
+}
